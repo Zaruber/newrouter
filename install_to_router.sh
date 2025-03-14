@@ -246,19 +246,49 @@ fi
 # Проверка возможности подключения к роутеру
 print_message "Проверка подключения к роутеру $ROUTER_IP..."
 
+# Включаем отладочный вывод SSH
+print_message "Команда SSH будет выполнена в отладочном режиме для выявления проблемы..."
 if [ -n "$SSH_PASSWORD" ]; then
-    sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$ROUTER_USER@$ROUTER_IP" exit 2>/dev/null
+    print_message "Используется аутентификация по паролю с sshpass"
+    sshpass -v -p "$SSH_PASSWORD" ssh -vvv -p "$SSH_PORT" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$ROUTER_USER@$ROUTER_IP" "echo Тестовое подключение успешно" 2>&1 | tee /tmp/ssh_debug.log
+    SSH_RESULT=$?
+    print_message "Код возврата SSH: $SSH_RESULT"
+    if [ -f /tmp/ssh_debug.log ]; then
+        print_message "Последние 10 строк лога SSH:"
+        tail -10 /tmp/ssh_debug.log
+    fi
 else
-    ssh -p "$SSH_PORT" -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no "$ROUTER_USER@$ROUTER_IP" exit 2>/dev/null
+    print_message "Используется аутентификация по ключу"
+    ssh -vvv -p "$SSH_PORT" -o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=no "$ROUTER_USER@$ROUTER_IP" "echo Тестовое подключение успешно" 2>&1 | tee /tmp/ssh_debug.log
+    SSH_RESULT=$?
+    print_message "Код возврата SSH: $SSH_RESULT"
+    if [ -f /tmp/ssh_debug.log ]; then
+        print_message "Последние 10 строк лога SSH:"
+        tail -10 /tmp/ssh_debug.log
+    fi
 fi
 
-if [ $? -ne 0 ]; then
+if [ $SSH_RESULT -ne 0 ]; then
     print_error "Не удалось подключиться к роутеру. Проверьте подключение и учетные данные."
     
     # Расширенная диагностика проблем подключения
     check_connection_problems "$ROUTER_IP" "$ROUTER_USER" "$SSH_PORT"
     print_tip "Если вы используете пароль, убедитесь, что он правильный."
     print_tip "Проверьте, что на роутере включен SSH (Система -> Администрирование -> Настройки SSH)."
+    print_tip "Попробуйте ввести следующую команду вручную для проверки подключения:"
+    print_tip "ssh -vvv $ROUTER_USER@$ROUTER_IP -p $SSH_PORT"
+    print_tip "Если вы используете пароль и установили sshpass, попробуйте вручную:"
+    print_tip "sshpass -p ВАШ_ПАРОЛЬ ssh $ROUTER_USER@$ROUTER_IP -p $SSH_PORT"
+    
+    # Проверка известных проблем с sshpass в зависимости от версии
+    if [ -n "$SSH_PASSWORD" ]; then
+        # Получение версии sshpass
+        SSHPASS_VERSION=$(sshpass -V 2>&1 | head -1)
+        print_message "Установленная версия sshpass: $SSHPASS_VERSION"
+        print_tip "Некоторые версии sshpass могут иметь проблемы с паролями, содержащими специальные символы."
+        print_tip "Попробуйте установить пароль без специальных символов или заменить пробелы на %20."
+    fi
+    
     exit 1
 fi
 
