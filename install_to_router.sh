@@ -16,6 +16,183 @@ print_success() {
     echo -e "\e[1;32m[УСПЕХ]\e[0m $1"
 }
 
+# Функция вывода подсказок/советов
+print_tip() {
+    echo -e "\e[1;33m[СОВЕТ]\e[0m $1"
+}
+
+# Функция диагностики подключения к роутеру
+check_connection_problems() {
+    local router_ip=$1
+    local user=$2
+    local port=$3
+    
+    print_message "Диагностика проблем подключения..."
+    
+    # Проверка связи с роутером через ping
+    print_message "Проверка доступности роутера по IP $router_ip..."
+    ping -c 2 $router_ip > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        print_error "Роутер недоступен по ping. Проверьте следующее:"
+        print_tip "- Убедитесь, что вы подключены к сети Wi-Fi роутера или кабелем"
+        print_tip "- Проверьте правильность IP-адреса роутера"
+        print_tip "- Убедитесь, что роутер включен и работает"
+        return 1
+    else
+        print_success "Роутер $router_ip доступен по ping."
+    fi
+    
+    # Проверка доступности SSH порта
+    print_message "Проверка доступности SSH порта $port на роутере..."
+    nc -z -w 5 $router_ip $port > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        print_error "SSH порт $port на роутере $router_ip недоступен. Проверьте следующее:"
+        print_tip "- Убедитесь, что на роутере включен и настроен SSH"
+        print_tip "- Проверьте правильность порта SSH (обычно 22)"
+        print_tip "- Возможно, в роутере блокируются SSH соединения (проверьте настройки брандмауэра)"
+        return 1
+    else
+        print_success "SSH порт $port на роутере $router_ip доступен."
+    fi
+    
+    return 0
+}
+
+# Функция проверки наличия необходимых утилит
+check_required_tools() {
+    local missing_tools=0
+    
+    print_message "Проверка наличия необходимых утилит..."
+    
+    # Проверка наличия SSH
+    if ! command -v ssh &> /dev/null; then
+        print_error "Утилита SSH не найдена. Установите SSH:"
+        print_tip "- Для Debian/Ubuntu: sudo apt-get install openssh-client"
+        print_tip "- Для CentOS/RHEL: sudo yum install openssh-clients"
+        print_tip "- Для macOS: обычно SSH уже установлен, иначе установите через Homebrew"
+        missing_tools=1
+    fi
+    
+    # Проверка наличия SCP
+    if ! command -v scp &> /dev/null; then
+        print_error "Утилита SCP не найдена. Установите SCP (обычно поставляется с SSH):"
+        print_tip "- Для Debian/Ubuntu: sudo apt-get install openssh-client"
+        print_tip "- Для CentOS/RHEL: sudo yum install openssh-clients"
+        print_tip "- Для macOS: обычно SCP уже установлен, иначе установите через Homebrew"
+        missing_tools=1
+    fi
+    
+    # Проверка наличия nc (netcat) для диагностики
+    if ! command -v nc &> /dev/null; then
+        print_error "Утилита netcat (nc) не найдена. Установите netcat для расширенной диагностики:"
+        print_tip "- Для Debian/Ubuntu: sudo apt-get install netcat"
+        print_tip "- Для CentOS/RHEL: sudo yum install nc"
+        print_tip "- Для macOS: brew install netcat"
+        missing_tools=1
+    fi
+    
+    if [ $missing_tools -eq 1 ]; then
+        return 1
+    else
+        print_success "Все необходимые утилиты найдены."
+        return 0
+    fi
+}
+
+# Функция проверки роутера на совместимость с OpenWrt
+check_openwrt_compatibility() {
+    local router_ip=$1
+    local user=$2
+    local port=$3
+    local password=$4
+    local ssh_cmd=""
+    
+    if [ -n "$password" ]; then
+        ssh_cmd="sshpass -p '$password' ssh -p '$port' -o ConnectTimeout=5 -o StrictHostKeyChecking=no '$user@$router_ip'"
+    else
+        ssh_cmd="ssh -p '$port' -o ConnectTimeout=5 -o StrictHostKeyChecking=no '$user@$router_ip'"
+    fi
+    
+    print_message "Проверка совместимости роутера с OpenWrt..."
+    
+    # Проверяем наличие файла /etc/openwrt_release
+    if [ -n "$password" ]; then
+        sshpass -p "$password" ssh -p "$port" -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$user@$router_ip" "ls /etc/openwrt_release" > /dev/null 2>&1
+    else
+        ssh -p "$port" -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$user@$router_ip" "ls /etc/openwrt_release" > /dev/null 2>&1
+    fi
+    
+    if [ $? -ne 0 ]; then
+        print_error "Не обнаружена система OpenWrt на роутере."
+        print_tip "VLESS Router требует роутер с установленной системой OpenWrt."
+        print_tip "Если у вас установлен OpenWrt, проверьте учетные данные SSH."
+        return 1
+    else
+        # Проверяем версию OpenWrt
+        if [ -n "$password" ]; then
+            OPENWRT_VERSION=$(sshpass -p "$password" ssh -p "$port" -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$user@$router_ip" "cat /etc/openwrt_release | grep DISTRIB_RELEASE | cut -d \"'\" -f 2")
+        else
+            OPENWRT_VERSION=$(ssh -p "$port" -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$user@$router_ip" "cat /etc/openwrt_release | grep DISTRIB_RELEASE | cut -d \"'\" -f 2")
+        fi
+        
+        print_success "Обнаружена система OpenWrt версии $OPENWRT_VERSION."
+        return 0
+    fi
+}
+
+# Функция проверки наличия необходимых пакетов на роутере
+check_router_packages() {
+    local router_ip=$1
+    local user=$2
+    local port=$3
+    local password=$4
+    local missing_pkgs=0
+    
+    print_message "Проверка наличия необходимых пакетов на роутере..."
+    
+    # Список необходимых пакетов
+    local required_pkgs=("curl" "uhttpd" "uhttpd-mod-ubus" "iptables" "ip6tables")
+    
+    for pkg in "${required_pkgs[@]}"; do
+        print_message "Проверка пакета $pkg..."
+        
+        if [ -n "$password" ]; then
+            sshpass -p "$password" ssh -p "$port" -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$user@$router_ip" "opkg list-installed | grep '^$pkg '" > /dev/null 2>&1
+        else
+            ssh -p "$port" -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$user@$router_ip" "opkg list-installed | grep '^$pkg '" > /dev/null 2>&1
+        fi
+        
+        if [ $? -ne 0 ]; then
+            print_error "Пакет $pkg не установлен на роутере."
+            missing_pkgs=1
+        fi
+    done
+    
+    if [ $missing_pkgs -eq 1 ]; then
+        print_message "Установка отсутствующих пакетов на роутер..."
+        
+        if [ -n "$password" ]; then
+            sshpass -p "$password" ssh -p "$port" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$user@$router_ip" "opkg update && opkg install curl uhttpd uhttpd-mod-ubus iptables ip6tables"
+        else
+            ssh -p "$port" -o ConnectTimeout=10 -o StrictHostKeyChecking=no "$user@$router_ip" "opkg update && opkg install curl uhttpd uhttpd-mod-ubus iptables ip6tables"
+        fi
+        
+        if [ $? -ne 0 ]; then
+            print_error "Не удалось установить необходимые пакеты на роутер."
+            print_tip "Попробуйте установить пакеты вручную через SSH:"
+            print_tip "  ssh $user@$router_ip -p $port"
+            print_tip "  opkg update && opkg install curl uhttpd uhttpd-mod-ubus iptables ip6tables"
+            return 1
+        else
+            print_success "Необходимые пакеты установлены на роутер."
+            return 0
+        fi
+    else
+        print_success "Все необходимые пакеты уже установлены на роутере."
+        return 0
+    fi
+}
+
 # Проверка наличия параметров
 if [ $# -lt 1 ]; then
     print_message "Использование: $0 <IP-адрес роутера> [имя пользователя] [порт SSH] [пароль SSH]"
@@ -29,6 +206,26 @@ ROUTER_IP="$1"
 ROUTER_USER="${2:-root}"  # По умолчанию root
 SSH_PORT="${3:-22}"       # По умолчанию порт 22
 SSH_PASSWORD="$4"        # Пароль SSH (может быть пустым)
+
+# Мастер установки - начало
+print_message "==============================================================="
+print_message "              VLESS Router - Мастер установки                 "
+print_message "==============================================================="
+print_message "Данный мастер поможет вам установить VLESS Router на ваш OpenWrt роутер."
+print_message "IP роутера: $ROUTER_IP  Пользователь: $ROUTER_USER  Порт SSH: $SSH_PORT"
+if [ -n "$SSH_PASSWORD" ]; then
+    print_message "Для подключения будет использован пароль."
+else
+    print_message "Для подключения будет использован SSH-ключ (без пароля)."
+fi
+print_message "==============================================================="
+
+# Проверка наличия базовых инструментов на локальной машине
+check_required_tools
+if [ $? -ne 0 ]; then
+    print_error "Для продолжения установки необходимо установить недостающие утилиты."
+    exit 1
+fi
 
 # Проверка наличия sshpass если указан пароль
 if [ -n "$SSH_PASSWORD" ]; then
@@ -46,7 +243,7 @@ else
     SCP_CMD="scp"
 fi
 
-# Проверка возможности подключения
+# Проверка возможности подключения к роутеру
 print_message "Проверка подключения к роутеру $ROUTER_IP..."
 
 if [ -n "$SSH_PASSWORD" ]; then
@@ -57,10 +254,30 @@ fi
 
 if [ $? -ne 0 ]; then
     print_error "Не удалось подключиться к роутеру. Проверьте подключение и учетные данные."
+    
+    # Расширенная диагностика проблем подключения
+    check_connection_problems "$ROUTER_IP" "$ROUTER_USER" "$SSH_PORT"
+    print_tip "Если вы используете пароль, убедитесь, что он правильный."
+    print_tip "Проверьте, что на роутере включен SSH (Система -> Администрирование -> Настройки SSH)."
     exit 1
 fi
 
 print_success "Подключение к роутеру успешно."
+
+# Проверка совместимости роутера с OpenWrt
+check_openwrt_compatibility "$ROUTER_IP" "$ROUTER_USER" "$SSH_PORT" "$SSH_PASSWORD"
+if [ $? -ne 0 ]; then
+    print_error "Роутер не совместим с VLESS Router."
+    exit 1
+fi
+
+# Проверка наличия необходимых пакетов на роутере
+check_router_packages "$ROUTER_IP" "$ROUTER_USER" "$SSH_PORT" "$SSH_PASSWORD"
+if [ $? -ne 0 ]; then
+    print_error "Не все необходимые пакеты установлены на роутере."
+    print_tip "Убедитесь, что роутер имеет доступ к интернету для установки пакетов."
+    exit 1
+fi
 
 # Копирование файлов проекта на роутер
 print_message "Копирование файлов VLESS Router на роутер..."
@@ -74,18 +291,22 @@ fi
 
 if [ $? -ne 0 ]; then
     print_error "Не удалось создать директорию на роутере."
+    print_tip "Проверьте права доступа и свободное место на роутере."
     exit 1
 fi
 
 # Копирование файлов
+current_dir=$(dirname "$0")
 if [ -n "$SSH_PASSWORD" ]; then
-    sshpass -p "$SSH_PASSWORD" scp -P "$SSH_PORT" -r ./vless-router/* "$ROUTER_USER@$ROUTER_IP:/root/vless-router/"
+    sshpass -p "$SSH_PASSWORD" scp -P "$SSH_PORT" -r "$current_dir"/* "$ROUTER_USER@$ROUTER_IP:/root/vless-router/"
 else
-    scp -P "$SSH_PORT" -r ./vless-router/* "$ROUTER_USER@$ROUTER_IP:/root/vless-router/"
+    scp -P "$SSH_PORT" -r "$current_dir"/* "$ROUTER_USER@$ROUTER_IP:/root/vless-router/"
 fi
 
 if [ $? -ne 0 ]; then
     print_error "Не удалось скопировать файлы на роутер."
+    print_tip "Проверьте права доступа и свободное место на роутере."
+    print_tip "Убедитесь, что вы находитесь в правильной директории проекта."
     exit 1
 fi
 
@@ -102,6 +323,7 @@ fi
 
 if [ $? -ne 0 ]; then
     print_error "Не удалось установить права доступа на скрипты."
+    print_tip "Проверьте права доступа и структуру директорий на роутере."
     exit 1
 fi
 
@@ -119,9 +341,27 @@ fi
 
 if [ $? -ne 0 ]; then
     print_error "Произошла ошибка при выполнении скрипта установки."
+    print_tip "Проверьте логи на роутере: /root/vless-router/logs/install.log"
+    print_tip "Также можно попробовать выполнить установку вручную:"
+    print_tip "  ssh $ROUTER_USER@$ROUTER_IP -p $SSH_PORT"
+    print_tip "  cd /root/vless-router && ./scripts/setup.sh"
     exit 1
 fi
 
 print_success "Установка VLESS Router завершена успешно!"
 print_message "Откройте веб-браузер и перейдите по адресу: http://$ROUTER_IP:8080"
 print_message "Следуйте инструкциям мастера настройки для завершения конфигурации."
+
+# Проверка доступности веб-интерфейса
+print_message "Проверка доступности веб-интерфейса..."
+sleep 2
+if command -v curl &> /dev/null; then
+    curl -s --connect-timeout 5 http://$ROUTER_IP:8080 > /dev/null
+    if [ $? -eq 0 ]; then
+        print_success "Веб-интерфейс VLESS Router доступен по адресу: http://$ROUTER_IP:8080"
+    else
+        print_error "Веб-интерфейс не отвечает. Возможно, потребуется дополнительная настройка."
+        print_tip "Убедитесь, что порт 8080 не блокируется брандмауэром."
+        print_tip "Проверьте, что веб-сервер запущен на роутере."
+    fi
+fi
