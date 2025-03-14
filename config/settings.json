@@ -1,0 +1,15 @@
+{
+    "active_profile": "🇩🇪 DE-1 [V_USER_WB97_30]  🚀",
+    "mode": "proxy_all",
+    "wifi": {
+        "direct_ssid": "VLESS_DIRECT",
+        "direct_password": "direct12345",
+        "proxy_ssid": "VLESS_PROXY",
+        "proxy_password": "proxy12345"
+    },
+    "proxy_mode": {
+        "use_whitelist": false,
+        "use_blacklist": true
+    },
+    "first_run": true
+}

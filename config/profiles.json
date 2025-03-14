@@ -1,0 +1,44 @@
+{
+    "profiles": [
+        {
+            "name": "Тех.поддержка в TG @bixsu 👨‍💻",
+            "url": "vless://5a766b41-42a0-4a3d-b600-df8425285366@de2.serv2x.ru:8443?security=reality&type=tcp&headerType=&path=&host=&sni=nltimes.nl&fp=chrome&pbk=ObJP-vy-Qksvk30M-NDs_yVbubddLsmMuF0ZND2Kl1k&sid=#%D0%A2%D0%B5%D1%85.%D0%BF%D0%BE%D0%B4%D0%B4%D0%B5%D1%80%D0%B6%D0%BA%D0%B0%20%D0%B2%20TG%20%40bixsu%20%F0%9F%91%A8%E2%80%8D%F0%9F%92%BB",
+            "enabled": true
+        },
+        {
+            "name": "Статус: Активный✅ | 43 дней ⏰",
+            "url": "vless://5a766b41-42a0-4a3d-b600-df8425285366@de2.serv2x.ru:8443?security=reality&type=tcp&headerType=&path=&host=&sni=nltimes.nl&fp=chrome&pbk=ObJP-vy-Qksvk30M-NDs_yVbubddLsmMuF0ZND2Kl1k&sid=#%D0%A1%D1%82%D0%B0%D1%82%D1%83%D1%81%3A%20%D0%90%D0%BA%D1%82%D0%B8%D0%B2%D0%BD%D1%8B%D0%B9%E2%9C%85%20%7C%2043%20%D0%B4%D0%BD%D0%B5%D0%B9%20%E2%8F%B0",
+            "enabled": true
+        },
+        {
+            "name": "🇸🇪 SE-1 [V_USER_WB97_30]  🚀",
+            "url": "vless://5a766b41-42a0-4a3d-b600-df8425285366@se.serv2x.ru:8443?security=reality&type=tcp&headerType=&path=&host=&sni=nltimes.nl&fp=chrome&pbk=ObJP-vy-Qksvk30M-NDs_yVbubddLsmMuF0ZND2Kl1k&sid=#%F0%9F%87%B8%F0%9F%87%AA%20SE-1%20%5BV_USER_WB97_30%5D%20%20%F0%9F%9A%80",
+            "enabled": true
+        },
+        {
+            "name": "🇳🇱 NL-1[V_USER_WB97_30]  🚀",
+            "url": "vless://5a766b41-42a0-4a3d-b600-df8425285366@nl.serv2x.ru:8443?security=reality&type=tcp&headerType=&path=&host=&sni=nltimes.nl&fp=chrome&pbk=ObJP-vy-Qksvk30M-NDs_yVbubddLsmMuF0ZND2Kl1k&sid=#%F0%9F%87%B3%F0%9F%87%B1%20NL-1%5BV_USER_WB97_30%5D%20%20%F0%9F%9A%80",
+            "enabled": true
+        },
+        {
+            "name": "🇱🇻 LV-1 [V_USER_WB97_30]  🚀",
+            "url": "vless://5a766b41-42a0-4a3d-b600-df8425285366@lv.serv2x.ru:8443?security=reality&type=tcp&headerType=&path=&host=&sni=nltimes.nl&fp=chrome&pbk=ObJP-vy-Qksvk30M-NDs_yVbubddLsmMuF0ZND2Kl1k&sid=#%F0%9F%87%B1%F0%9F%87%BB%20LV-1%20%5BV_USER_WB97_30%5D%20%20%F0%9F%9A%80",
+            "enabled": true
+        },
+        {
+            "name": "🇷🇺 RU-1 [V_USER_WB97_30]  🚀",
+            "url": "vless://5a766b41-42a0-4a3d-b600-df8425285366@ru.serv2x.ru:8443?security=reality&type=tcp&headerType=&path=&host=&sni=nltimes.nl&fp=chrome&pbk=ObJP-vy-Qksvk30M-NDs_yVbubddLsmMuF0ZND2Kl1k&sid=#%F0%9F%87%B7%F0%9F%87%BA%20RU-1%20%5BV_USER_WB97_30%5D%20%20%F0%9F%9A%80",
+            "enabled": true
+        },
+        {
+            "name": "🇩🇪 DE-1 [V_USER_WB97_30]  🚀",
+            "url": "vless://5a766b41-42a0-4a3d-b600-df8425285366@de2.serv2x.ru:8443?security=reality&type=tcp&headerType=&path=&host=&sni=nltimes.nl&fp=chrome&pbk=ObJP-vy-Qksvk30M-NDs_yVbubddLsmMuF0ZND2Kl1k&sid=#%F0%9F%87%A9%F0%9F%87%AA%20DE-1%20%5BV_USER_WB97_30%5D%20%20%F0%9F%9A%80",
+            "enabled": true
+        },
+        {
+            "name": "🇦🇹 VE-1 [V_USER_WB97_30]  🚀",
+            "url": "vless://5a766b41-42a0-4a3d-b600-df8425285366@ve.serv2x.ru:8443?security=reality&type=tcp&headerType=&path=&host=&sni=nltimes.nl&fp=chrome&pbk=ObJP-vy-Qksvk30M-NDs_yVbubddLsmMuF0ZND2Kl1k&sid=#%F0%9F%87%A6%F0%9F%87%B9%20VE-1%20%5BV_USER_WB97_30%5D%20%20%F0%9F%9A%80",
+            "enabled": true
+        }
+    ]
+}

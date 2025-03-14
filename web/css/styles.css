@@ -1,0 +1,103 @@
+/* VLESS Router - Стили для веб-интерфейса */
+
+body {
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.container {
+    max-width: 1200px;
+}
+
+.card {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    border-radius: 0.5rem;
+    border: none;
+}
+
+.card-header {
+    background-color: #fff;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.125);
+    padding: 1rem;
+}
+
+.card-body {
+    padding: 1.25rem;
+}
+
+.nav-pills .nav-link {
+    color: #495057;
+}
+
+.nav-pills .nav-link.active {
+    background-color: #0d6efd;
+    color: white;
+}
+
+.form-check-input:checked {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+}
+
+.list-group-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.status-connected {
+    background-color: #d1e7dd;
+    color: #0f5132;
+}
+
+.status-disconnected {
+    background-color: #f8d7da;
+    color: #842029;
+}
+
+.btn-icon {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.site-item-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* Анимация загрузки */
+.spinner {
+    width: 1rem;
+    height: 1rem;
+    border: 0.15rem solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spinner-border .75s linear infinite;
+    display: inline-block;
+    margin-right: 0.5rem;
+}
+
+@keyframes spinner-border {
+    to { transform: rotate(360deg); }
+}
+
+/* Дополнительные стили для мобильных устройств */
+@media (max-width: 768px) {
+    .nav-pills {
+        flex-wrap: wrap;
+    }
+    
+    .nav-pills .nav-item {
+        width: 50%;
+        margin-bottom: 0.5rem;
+    }
+    
+    .card-header {
+        flex-direction: column;
+        align-items: flex-start !important;
+    }
+    
+    .card-header button {
+        margin-top: 0.5rem;
+    }
+}
