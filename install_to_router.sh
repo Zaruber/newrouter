@@ -21,7 +21,7 @@ if [ $# -lt 1 ]; then
     print_message "Использование: $0 <IP-адрес роутера> [имя пользователя] [порт SSH]"
     print_message "Пример: $0 192.168.1.1 root 22"
     exit 1
-}
+fi
 
 # Параметры подключения
 ROUTER_IP="$1"
@@ -31,7 +31,8 @@ SSH_PORT="${3:-22}"       # По умолчанию порт 22
 # Проверка возможности подключения
 print_message "Проверка подключения к роутеру $ROUTER_IP..."
 
-ssh -p "$SSH_PORT" -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no "$ROUTER_USER@$ROUTER_IP" exit 2>/dev/null
+# Убираем флаг BatchMode для возможности запроса пароля
+ssh -p "$SSH_PORT" -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$ROUTER_USER@$ROUTER_IP" exit 2>/dev/null
 
 if [ $? -ne 0 ]; then
     print_error "Не удалось подключиться к роутеру. Проверьте подключение и учетные данные."
