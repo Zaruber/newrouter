@@ -18,8 +18,9 @@ print_success() {
 
 # Проверка наличия параметров
 if [ $# -lt 1 ]; then
-    print_message "Использование: $0 <IP-адрес роутера> [имя пользователя] [порт SSH]"
-    print_message "Пример: $0 192.168.1.1 root 22"
+    print_message "Использование: $0 <IP-адрес роутера> [имя пользователя] [порт SSH] [пароль SSH]"
+    print_message "Пример: $0 192.168.1.1 root 22 mypassword"
+    print_message "Если вы уже настроили SSH-ключ, пароль можно не указывать."
     exit 1
 fi
 
@@ -27,12 +28,32 @@ fi
 ROUTER_IP="$1"
 ROUTER_USER="${2:-root}"  # По умолчанию root
 SSH_PORT="${3:-22}"       # По умолчанию порт 22
+SSH_PASSWORD="$4"        # Пароль SSH (может быть пустым)
+
+# Проверка наличия sshpass если указан пароль
+if [ -n "$SSH_PASSWORD" ]; then
+    if ! command -v sshpass &> /dev/null; then
+        print_error "Для использования пароля требуется пакет 'sshpass'. Установите его:"
+        print_message "  - Для Debian/Ubuntu: sudo apt-get install sshpass"
+        print_message "  - Для CentOS/RHEL: sudo yum install sshpass"
+        print_message "  - Для macOS: brew install hudochenkov/sshpass/sshpass"
+        exit 1
+    fi
+    SSH_CMD="sshpass -p '$SSH_PASSWORD' ssh"
+    SCP_CMD="sshpass -p '$SSH_PASSWORD' scp"
+else
+    SSH_CMD="ssh"
+    SCP_CMD="scp"
+fi
 
 # Проверка возможности подключения
 print_message "Проверка подключения к роутеру $ROUTER_IP..."
 
-# Убираем флаг BatchMode для возможности запроса пароля
-ssh -p "$SSH_PORT" -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$ROUTER_USER@$ROUTER_IP" exit 2>/dev/null
+if [ -n "$SSH_PASSWORD" ]; then
+    sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$ROUTER_USER@$ROUTER_IP" exit 2>/dev/null
+else
+    ssh -p "$SSH_PORT" -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no "$ROUTER_USER@$ROUTER_IP" exit 2>/dev/null
+fi
 
 if [ $? -ne 0 ]; then
     print_error "Не удалось подключиться к роутеру. Проверьте подключение и учетные данные."
@@ -45,7 +66,11 @@ print_success "Подключение к роутеру успешно."
 print_message "Копирование файлов VLESS Router на роутер..."
 
 # Создание директории на роутере
-ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "mkdir -p /root/vless-router"
+if [ -n "$SSH_PASSWORD" ]; then
+    sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "mkdir -p /root/vless-router"
+else
+    ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "mkdir -p /root/vless-router"
+fi
 
 if [ $? -ne 0 ]; then
     print_error "Не удалось создать директорию на роутере."
@@ -53,7 +78,11 @@ if [ $? -ne 0 ]; then
 fi
 
 # Копирование файлов
-scp -P "$SSH_PORT" -r ./vless-router/* "$ROUTER_USER@$ROUTER_IP:/root/vless-router/"
+if [ -n "$SSH_PASSWORD" ]; then
+    sshpass -p "$SSH_PASSWORD" scp -P "$SSH_PORT" -r ./vless-router/* "$ROUTER_USER@$ROUTER_IP:/root/vless-router/"
+else
+    scp -P "$SSH_PORT" -r ./vless-router/* "$ROUTER_USER@$ROUTER_IP:/root/vless-router/"
+fi
 
 if [ $? -ne 0 ]; then
     print_error "Не удалось скопировать файлы на роутер."
@@ -65,7 +94,11 @@ print_success "Файлы успешно скопированы на роуте�
 # Установка прав на исполнение скриптов
 print_message "Настройка прав доступа..."
 
-ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "chmod +x /root/vless-router/scripts/*.sh && chmod +x /root/vless-router/web/*.cgi"
+if [ -n "$SSH_PASSWORD" ]; then
+    sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "chmod +x /root/vless-router/scripts/*.sh && chmod +x /root/vless-router/web/*.cgi"
+else
+    ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "chmod +x /root/vless-router/scripts/*.sh && chmod +x /root/vless-router/web/*.cgi"
+fi
 
 if [ $? -ne 0 ]; then
     print_error "Не удалось установить права доступа на скрипты."
@@ -78,7 +111,11 @@ print_success "Права доступа установлены."
 print_message "Запуск скрипта установки на роутере..."
 print_message "После завершения установки веб-интерфейс будет доступен по адресу: http://$ROUTER_IP:8080"
 
-ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "/root/vless-router/scripts/setup.sh"
+if [ -n "$SSH_PASSWORD" ]; then
+    sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "/root/vless-router/scripts/setup.sh"
+else
+    ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "/root/vless-router/scripts/setup.sh"
+fi
 
 if [ $? -ne 0 ]; then
     print_error "Произошла ошибка при выполнении скрипта установки."
