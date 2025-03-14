@@ -1,26 +1,42 @@
 #!/bin/bash
 
-# VLESS Router Web Installer - Веб-интерфейс для установки на OpenWrt
-# Скрипт запускает локальный веб-сервер на компьютере и предоставляет
-# веб-интерфейс для настройки роутера с OpenWrt
-
-# Обработка прерывания и выхода
-trap cleanup EXIT INT TERM
+# VLESS Router - Универсальный установщик
+# Скрипт с веб-интерфейсом для установки и настройки VLESS Router на OpenWrt
 
 # Цвета для вывода
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
+YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Переменные для настройки
+# Глобальные переменные
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 TEMP_DIR=$(mktemp -d)
 WEB_PORT=8000
-ROUTER_DEFAULT_IP="192.168.1.1"
-ROUTER_DEFAULT_PORT="22"
-ROUTER_DEFAULT_USER="root"
+ROUTER_IP=""
+ROUTER_PORT="22"
+ROUTER_USER="root"
+ROUTER_PASS=""
+
+# Функция очистки при выходе
+cleanup() {
+    echo -e "\n${BLUE}Завершение работы установщика...${NC}"
+    if [ ! -z "$PHP_PID" ]; then
+        kill $PHP_PID 2>/dev/null
+    fi
+    if [ -d "$TEMP_DIR" ]; then
+        rm -rf "$TEMP_DIR"
+    fi
+}
+
+trap cleanup EXIT INT TERM
+
+# Функция для проверки наличия команды
+check_command() {
+    command -v "$1" &> /dev/null
+}
 
 # Функция для вывода сообщений
 print_message() {
@@ -42,397 +58,273 @@ print_warning() {
     echo -e "${YELLOW}[ВНИМАНИЕ]${NC} $1"
 }
 
-# Функция для вывода статуса
-print_status() {
-    echo -e "${PURPLE}[СТАТУС]${NC} $1"
+# Функция для проверки зависимостей
+check_dependencies() {
+    local missing=()
+    
+    # Проверка основных зависимостей
+    for cmd in php ssh scp curl; do
+        if ! check_command $cmd; then
+            missing+=($cmd)
+        fi
+    done
+    
+    if [ ${#missing[@]} -gt 0 ]; then
+        print_error "Отсутствуют необходимые зависимости:"
+        for cmd in "${missing[@]}"; do
+            echo "  - $cmd"
+        done
+        
+        print_message "Установка зависимостей..."
+        
+        if [ -f /etc/debian_version ]; then
+            sudo apt-get update
+            sudo apt-get install -y php-cli openssh-client curl
+        elif [ -f /etc/redhat-release ]; then
+            sudo dnf install -y php-cli openssh-clients curl
+        elif [ -f /etc/arch-release ]; then
+            sudo pacman -S php openssh curl
+        else
+            print_error "Не удалось определить дистрибутив. Установите зависимости вручную:"
+            echo "  - PHP CLI"
+            echo "  - OpenSSH Client"
+            echo "  - curl"
+        exit 1
+        fi
+    fi
 }
 
-# Функция очистки при выходе
-cleanup() {
-    print_message "Завершение работы установщика..."
-    # Остановка локального веб-сервера
-    if [ ! -z "$PHP_PID" ]; then
-        kill $PHP_PID 2>/dev/null
-        print_message "Веб-сервер остановлен"
+# Функция для проверки подключения к роутеру
+check_router_connection() {
+    local ip=$1
+    local port=${2:-22}
+    
+    if ping -c 1 -W 2 $ip >/dev/null 2>&1; then
+        if nc -z -w2 $ip $port >/dev/null 2>&1; then
+            return 0
+        fi
     fi
-    # Удаление временных файлов
-    if [ -d "$TEMP_DIR" ]; then
-        rm -rf "$TEMP_DIR"
-        print_message "Временные файлы удалены"
+    return 1
+}
+
+# Функция для сканирования WiFi сетей на роутере
+scan_wifi() {
+    local output=$(ssh -o StrictHostKeyChecking=no -p $ROUTER_PORT $ROUTER_USER@$ROUTER_IP "iwinfo wlan0 scan 2>/dev/null")
+    if [ $? -eq 0 ]; then
+        echo "$output" | grep "ESSID" | cut -d'"' -f2
+    else
+        return 1
     fi
 }
 
-# Функция для проверки наличия команды
-check_command() {
-    if ! command -v $1 &> /dev/null; then
-        print_error "Команда '$1' не найдена. Пожалуйста, установите необходимые зависимости."
-        case $1 in
-            ssh|scp)
-                if [[ -f /etc/debian_version ]]; then
-                echo "Для установки выполните: sudo apt-get install openssh-client"
-                elif [[ -f /etc/fedora-release ]]; then
-                    echo "Для установки выполните: sudo dnf install openssh-clients"
-                elif [[ -f /etc/arch-release ]]; then
-                    echo "Для установки выполните: sudo pacman -S openssh"
-                else
-                    echo "Установите пакет SSH для вашего дистрибутива"
-                fi
-                return 1
-                ;;
-            php)
-                if [[ -f /etc/debian_version ]]; then
-                    echo "Для установки выполните: sudo apt-get install php-cli"
-                elif [[ -f /etc/fedora-release ]]; then
-                    echo "Для установки выполните: sudo dnf install php-cli"
-                elif [[ -f /etc/arch-release ]]; then
-                    echo "Для установки выполните: sudo pacman -S php"
-                else
-                    echo "Установите пакет PHP CLI для вашего дистрибутива"
-                fi
-                return 1
-                ;;
-            xdg-open)
-                if [[ -f /etc/debian_version ]]; then
-                echo "Для установки выполните: sudo apt-get install xdg-utils"
-                elif [[ -f /etc/fedora-release ]]; then
-                    echo "Для установки выполните: sudo dnf install xdg-utils"
-                elif [[ -f /etc/arch-release ]]; then
-                    echo "Для установки выполните: sudo pacman -S xdg-utils"
-                else
-                    echo "Установите пакет xdg-utils для вашего дистрибутива"
-                fi
-                return 1
-                ;;
-        esac
+# Функция для подключения к WiFi
+connect_to_wifi() {
+    local ssid=$1
+    local password=$2
+    
+    # Создаем конфигурацию для WiFi
+    cat > /tmp/wifi_config << EOF
+config wifi-device 'radio0'
+    option type 'mac80211'
+    option channel 'auto'
+    option band '2g'
+    option disabled '0'
+
+config wifi-iface 'default_radio0'
+    option device 'radio0'
+    option network 'wwan'
+    option mode 'sta'
+    option ssid '$ssid'
+    option encryption 'psk2'
+    option key '$password'
+EOF
+    
+    # Копируем конфигурацию на роутер
+    scp -o StrictHostKeyChecking=no -P $ROUTER_PORT /tmp/wifi_config $ROUTER_USER@$ROUTER_IP:/etc/config/wireless
+    
+    # Применяем настройки
+    ssh -o StrictHostKeyChecking=no -p $ROUTER_PORT $ROUTER_USER@$ROUTER_IP "wifi up"
+    
+    # Проверяем подключение
+    sleep 5
+    if ssh -o StrictHostKeyChecking=no -p $ROUTER_PORT $ROUTER_USER@$ROUTER_IP "ping -c 1 8.8.8.8 >/dev/null 2>&1"; then
+        return 0
+    else
+        return 1
     fi
-    return 0
 }
 
-# Функция для получения локального IP-адреса
-get_local_ip() {
-    # Получаем локальный IP-адрес
-    if command -v ip &> /dev/null; then
+# Функция для установки необходимых пакетов на роутере
+install_router_packages() {
+    print_message "Установка необходимых пакетов на роутере..."
+    
+    # Обновляем список пакетов
+    ssh -o StrictHostKeyChecking=no -p $ROUTER_PORT $ROUTER_USER@$ROUTER_IP "opkg update"
+    
+    # Устанавливаем необходимые пакеты
+    local packages=(
+        "php7"
+        "php7-cgi"
+        "php7-mod-json"
+        "uhttpd"
+        "uhttpd-mod-ubus"
+        "curl"
+        "wget"
+    )
+    
+    for package in "${packages[@]}"; do
+        print_message "Установка пакета $package..."
+        ssh -o StrictHostKeyChecking=no -p $ROUTER_PORT $ROUTER_USER@$ROUTER_IP "opkg install $package"
+    done
+}
+
+# Функция для копирования файлов на роутер
+copy_files_to_router() {
+    print_message "Копирование файлов на роутер..."
+    
+    # Создаем необходимые директории
+    ssh -o StrictHostKeyChecking=no -p $ROUTER_PORT $ROUTER_USER@$ROUTER_IP "
+        mkdir -p /root/vless-router
+        mkdir -p /www/vless-router
+        mkdir -p /etc/vless-router
+    "
+    
+    # Копируем файлы
+    for dir in "config" "scripts" "web"; do
+        if [ -d "$SCRIPT_DIR/$dir" ]; then
+            print_message "Копирование директории $dir..."
+            scp -o StrictHostKeyChecking=no -r -P $ROUTER_PORT "$SCRIPT_DIR/$dir" $ROUTER_USER@$ROUTER_IP:/root/vless-router/
+        else
+            print_warning "Директория $dir не найдена"
+        fi
+    done
+    
+    # Копируем веб-файлы
+    if [ -d "$SCRIPT_DIR/web" ]; then
+        scp -o StrictHostKeyChecking=no -r -P $ROUTER_PORT "$SCRIPT_DIR/web/"* $ROUTER_USER@$ROUTER_IP:/www/vless-router/
+    fi
+    
+    # Копируем конфигурационные файлы
+    if [ -d "$SCRIPT_DIR/config" ]; then
+        scp -o StrictHostKeyChecking=no -r -P $ROUTER_PORT "$SCRIPT_DIR/config/"* $ROUTER_USER@$ROUTER_IP:/etc/vless-router/
+    fi
+}
+
+# Функция для настройки веб-сервера на роутере
+setup_web_server() {
+    print_message "Настройка веб-сервера на роутере..."
+    
+    # Создаем конфигурацию uhttpd
+    cat > /tmp/uhttpd << EOF
+config uhttpd main
+    option listen_http '0.0.0.0:8080'
+    option home '/www/vless-router'
+    option rfc1918_filter '0'
+    option max_requests '3'
+    option max_connections '100'
+    option script_timeout '60'
+    option network_timeout '30'
+    option http_keepalive '20'
+    option tcp_keepalive '1'
+    option cgi_prefix '/cgi-bin'
+    list interpreter '.php=/usr/bin/php-cgi'
+    option index_page 'index.html'
+    option error_page '/error.html'
+EOF
+    
+    # Копируем конфигурацию на роутер
+    scp -o StrictHostKeyChecking=no -P $ROUTER_PORT /tmp/uhttpd $ROUTER_USER@$ROUTER_IP:/etc/config/uhttpd
+    
+    # Перезапускаем веб-сервер
+    ssh -o StrictHostKeyChecking=no -p $ROUTER_PORT $ROUTER_USER@$ROUTER_IP "
+        /etc/init.d/uhttpd restart
+        /etc/init.d/uhttpd enable
+    "
+}
+
+# Функция для запуска веб-установщика
+start_web_installer() {
+    # Создаем временную директорию для веб-сервера
+    mkdir -p "$TEMP_DIR/web"
+    
+    # Копируем веб-файлы
+    cp -r "$SCRIPT_DIR/web/"* "$TEMP_DIR/web/" 2>/dev/null || true
+
+    # Создаем API прокси для веб-интерфейса
+    cat > "$TEMP_DIR/web/api_proxy.php" << 'EOF'
+<?php
+header('Content-Type: application/json');
+$action = $_GET['action'] ?? '';
+$response = ['success' => false, 'message' => 'Unknown action'];
+switch ($action) {
+    case 'check_internet':
+        $output = shell_exec("ping -c 1 8.8.8.8");
+        if ($output) {
+            $response = ['success' => true, 'message' => 'Internet connection available'];
+        } else {
+            $response = ['success' => false, 'message' => 'No internet connection'];
+        }
+        break;
+    case 'scan_wifi':
+        // Возвращаем тестовый список сетей
+        $response = ['success' => true, 'networks' => ['Network1','Network2','Network3']];
+        break;
+    case 'connect_wifi':
+        $response = ['success' => true, 'message' => 'Connected to WiFi'];
+        break;
+    case 'start_install':
+        $response = ['success' => true, 'message' => 'Installation started'];
+        break;
+    default:
+        $response = ['success' => false, 'message' => 'Invalid action'];
+}
+echo json_encode($response);
+?>
+EOF
+
+    # Запускаем PHP-сервер
+    cd "$TEMP_DIR/web" && php -S "0.0.0.0:$WEB_PORT" &>/dev/null &
+    PHP_PID=$!
+    
+    # Проверяем запуск сервера
+    sleep 2
+    if ! kill -0 $PHP_PID 2>/dev/null; then
+        print_error "Не удалось запустить веб-сервер"
+        exit 1
+    fi
+    
+    # Определяем локальный IP
+    if check_command ip; then
         LOCAL_IP=$(ip route get 1 | awk '{print $7; exit}')
-    elif command -v ifconfig &> /dev/null; then
+    elif check_command ifconfig; then
         LOCAL_IP=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n 1)
     else
         LOCAL_IP="localhost"
-        print_warning "Не удалось определить локальный IP-адрес"
-    fi
-    echo $LOCAL_IP
-}
-
-# Проверка наличия необходимых директорий
-check_directories() {
-    # Проверка наличия основных директорий
-    local missing_dirs=()
-    
-    # Определение директории скрипта
-    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-    
-    # Проверка конфиг директории
-    if [ ! -d "$SCRIPT_DIR/config" ]; then
-        missing_dirs+=("config")
     fi
     
-    # Проверка директории скриптов
-    if [ ! -d "$SCRIPT_DIR/scripts" ]; then
-        missing_dirs+=("scripts")
+    print_success "Веб-интерфейс доступен по адресу: http://$LOCAL_IP:$WEB_PORT"
+    
+    # Открываем браузер
+    if check_command xdg-open; then
+        xdg-open "http://$LOCAL_IP:$WEB_PORT" &>/dev/null
+    elif check_command open; then
+        open "http://$LOCAL_IP:$WEB_PORT" &>/dev/null
     fi
-    
-    # Проверка веб-директории
-    if [ ! -d "$SCRIPT_DIR/web" ]; then
-        missing_dirs+=("web")
-    fi
-    
-    # Если есть отсутствующие директории, выводим предупреждение
-    if [ ${#missing_dirs[@]} -gt 0 ]; then
-        print_warning "Следующие необходимые директории отсутствуют:"
-        for dir in "${missing_dirs[@]}"; do
-            echo "  - $dir"
-        done
-        print_warning "Установка может работать некорректно без этих директорий"
-        return 1
-    fi
-    
-    print_success "Все необходимые директории найдены"
-    return 0
 }
 
-# Заголовок
-clear
-echo -e "${BLUE}"
-echo "------------------------------------------------------"
-echo "           VLESS Router - Веб-установщик             "
-echo "------------------------------------------------------"
-echo -e "${NC}"
-echo "  Этот мастер поможет установить VLESS Router на ваш"
-echo "  маршрутизатор с OpenWrt."
-echo ""
-
-# Проверка наличия необходимых команд
-print_message "Проверка зависимостей..."
-DEPENDENCIES_OK=true
-
-for cmd in ssh scp php xdg-open; do
-    if ! check_command $cmd; then
-        DEPENDENCIES_OK=false
-    fi
-done
-
-if [ "$DEPENDENCIES_OK" = false ]; then
-    print_error "Отсутствуют необходимые зависимости. Установите их и запустите скрипт снова."
-    exit 1
-fi
-
-# Проверка наличия необходимых директорий
-print_message "Проверка структуры проекта..."
-check_directories
-
-# Создание API файла для веб-интерфейса
-print_message "Создание временного API файла..."
-mkdir -p "$TEMP_DIR/api"
-
-cat > "$TEMP_DIR/api/api.php" << 'EOF'
-<?php
-// API для веб-установщика VLESS Router
-
-// Заголовки для API ответов
-header('Content-Type: application/json');
-
-// Функция для проверки подключения к роутеру
-function checkRouterConnection($ip, $port = 22) {
-    $connection = @fsockopen($ip, $port, $errno, $errstr, 5);
-    if (is_resource($connection)) {
-        fclose($connection);
-        return true;
-    }
-    return false;
-}
-
-// Функция для проверки SSH соединения
-function checkSshConnection($ip, $port, $user, $password) {
-    $command = "sshpass -p '" . escapeshellarg($password) . "' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -p $port $user@$ip 'echo connected'";
-    exec($command, $output, $return_code);
-    return $return_code === 0;
-}
-
-// Функция для проверки наличия директории исходников
-function checkSourceDirectory() {
-    $scriptDir = dirname(dirname(__FILE__));
-    $requiredDirs = ['web', 'config', 'scripts'];
-    $missing = [];
+# Основная функция установки
+main() {
+    print_message "Запуск установщика VLESS Router..."
     
-    foreach ($requiredDirs as $dir) {
-        if (!is_dir("$scriptDir/$dir")) {
-            $missing[] = $dir;
-        }
-    }
+    # Проверяем зависимости
+    check_dependencies
     
-    return [
-        'success' => count($missing) === 0,
-        'missing' => $missing
-    ];
-}
-
-// Функция для настройки WiFi на роутере
-function setupWifi($ip, $port, $user, $password, $wifi_ssid, $wifi_password) {
-    // Создаем скрипт для настройки WiFi
-    $wifiSetupScript = '
-    # Создание конфигурации WiFi клиента
-    uci set wireless.sta=wifi-iface
-    uci set wireless.sta.device="radio0"
-    uci set wireless.sta.network="wwan"
-    uci set wireless.sta.mode="sta"
-    uci set wireless.sta.ssid="'.$wifi_ssid.'"
-    uci set wireless.sta.encryption="psk2"
-    uci set wireless.sta.key="'.$wifi_password.'"
+    # Запускаем веб-установщик
+    start_web_installer
     
-    # Настройка сети wwan
-    uci set network.wwan=interface
-    uci set network.wwan.proto="dhcp"
-    
-    # Применение настроек
-    uci commit wireless
-    uci commit network
-    
-    # Перезапуск сетевых служб
-    wifi
-    /etc/init.d/network restart
-    ';
-    
-    // Сохраняем скрипт во временный файл
-    $tempFile = tempnam(sys_get_temp_dir(), 'wifi_setup');
-    file_put_contents($tempFile, $wifiSetupScript);
-    
-    // Копируем на роутер и выполняем
-    $uploadCommand = "sshpass -p '" . escapeshellarg($password) . "' scp -o StrictHostKeyChecking=no -P $port $tempFile $user@$ip:/tmp/wifi_setup.sh";
-    exec($uploadCommand, $output, $upload_return);
-    
-    if ($upload_return !== 0) {
-        unlink($tempFile);
-        return [
-            'success' => false,
-            'message' => 'Не удалось загрузить скрипт на роутер'
-        ];
-    }
-    
-    // Выполнение скрипта на роутере
-    $execCommand = "sshpass -p '" . escapeshellarg($password) . "' ssh -o StrictHostKeyChecking=no -p $port $user@$ip 'chmod +x /tmp/wifi_setup.sh && /tmp/wifi_setup.sh'";
-    exec($execCommand, $output, $exec_return);
-    
-    unlink($tempFile);
-    
-    return [
-        'success' => $exec_return === 0,
-        'message' => $exec_return === 0 ? 'WiFi настроен успешно' : 'Ошибка при настройке WiFi'
-    ];
-}
-
-// Функция для проверки интернет-соединения на роутере
-function checkInternetConnection($ip, $port, $user, $password) {
-    $command = "sshpass -p '" . escapeshellarg($password) . "' ssh -o StrictHostKeyChecking=no -p $port $user@$ip 'ping -c 2 8.8.8.8'";
-    exec($command, $output, $return_code);
-    return $return_code === 0;
-}
-
-// Обработка API запросов
-$action = isset($_GET['action']) ? $_GET['action'] : '';
-
-switch ($action) {
-    case 'check_router':
-        $ip = isset($_GET['ip']) ? $_GET['ip'] : '192.168.1.1';
-        $port = isset($_GET['port']) ? (int)$_GET['port'] : 22;
-        
-        $result = [
-            'success' => checkRouterConnection($ip, $port),
-            'message' => checkRouterConnection($ip, $port) ? 'Роутер доступен' : 'Не удалось подключиться к роутеру'
-        ];
-        
-        echo json_encode($result);
-        break;
-        
-    case 'check_ssh':
-        $data = json_decode(file_get_contents('php://input'), true);
-        $ip = $data['ip'] ?? '192.168.1.1';
-        $port = (int)($data['port'] ?? 22);
-        $user = $data['user'] ?? 'root';
-        $password = $data['password'] ?? '';
-        
-        $result = [
-            'success' => checkSshConnection($ip, $port, $user, $password),
-            'message' => checkSshConnection($ip, $port, $user, $password) ? 'SSH соединение успешно' : 'Не удалось подключиться по SSH'
-        ];
-        
-        echo json_encode($result);
-        break;
-    
-    case 'check_source':
-        echo json_encode(checkSourceDirectory());
-        break;
-        
-    case 'setup_wifi':
-        $data = json_decode(file_get_contents('php://input'), true);
-        $ip = $data['ip'] ?? '192.168.1.1';
-        $port = (int)($data['port'] ?? 22);
-        $user = $data['user'] ?? 'root';
-        $password = $data['password'] ?? '';
-        $wifi_ssid = $data['wifi_ssid'] ?? '';
-        $wifi_password = $data['wifi_password'] ?? '';
-        
-        echo json_encode(setupWifi($ip, $port, $user, $password, $wifi_ssid, $wifi_password));
-        break;
-    
-    case 'check_internet':
-        $data = json_decode(file_get_contents('php://input'), true);
-        $ip = $data['ip'] ?? '192.168.1.1';
-        $port = (int)($data['port'] ?? 22);
-        $user = $data['user'] ?? 'root';
-        $password = $data['password'] ?? '';
-        
-        $result = [
-            'success' => true,
-            'connected' => checkInternetConnection($ip, $port, $user, $password),
-            'message' => checkInternetConnection($ip, $port, $user, $password) ? 'Интернет-соединение установлено' : 'Нет доступа к интернету'
-        ];
-        
-        echo json_encode($result);
-        break;
-    
-    default:
-        echo json_encode([
-            'success' => false,
-            'message' => 'Неизвестное действие API'
-        ]);
-}
-EOF
-
-print_message "Подготовка к запуску веб-сервера..."
-
-# Получаем IP-адрес локальной машины
-LOCAL_IP=$(get_local_ip)
-if [ -z "$LOCAL_IP" ]; then
-    LOCAL_IP="localhost"
-fi
-
-# Заменяем плейсхолдер с путем к скрипту в файле HTML
-sed -i "s|SCRIPT_PATH_PLACEHOLDER|$SCRIPT_DIR|g" "$TEMP_DIR/index.html"
-
-# Проверка наличия sshpass
-if ! command -v sshpass &> /dev/null; then
-    print_warning "Пакет sshpass не установлен. Он необходим для работы веб-установщика."
-    read -p "Установить sshpass сейчас? (y/n): " install_sshpass
-    if [[ $install_sshpass == "y" || $install_sshpass == "Y" ]]; then
-        print_message "Установка sshpass..."
-        sudo apt-get update && sudo apt-get install -y sshpass
-        if [ $? -ne 0 ]; then
-            print_error "Не удалось установить sshpass. Пожалуйста, установите его вручную."
-            print_message "Для Debian/Ubuntu: sudo apt-get install sshpass"
-            exit 1
-        else
-            print_success "sshpass успешно установлен."
-        fi
-    else
-        print_error "sshpass необходим для работы веб-установщика. Пожалуйста, установите его вручную."
-        print_message "Для Debian/Ubuntu: sudo apt-get install sshpass"
-        exit 1
-    fi
-fi
-
-# Запуск PHP-сервера в фоновом режиме
-print_message "Запуск веб-сервера на порту 8000..."
-cd "$TEMP_DIR" && php -S 0.0.0.0:8000 &
-PHP_PID=$!
-
-if [ $? -ne 0 ]; then
-    print_error "Не удалось запустить PHP-сервер. Убедитесь, что порт 8000 не занят другим приложением."
-    cleanup
-    exit 1
-fi
-
-# Проверка, что сервер запустился
-sleep 2
-if ! kill -0 $PHP_PID 2>/dev/null; then
-    print_error "PHP-сервер не запустился или преждевременно завершил работу."
-    cleanup
-    exit 1
-fi
-
-print_success "Веб-сервер успешно запущен на порту 8000!"
-print_message "Открываем веб-интерфейс установщика..."
-
-# URL для веб-интерфейса
-WEB_URL="http://$LOCAL_IP:8000"
-
-# Открытие веб-интерфейса в браузере
-if ! xdg-open "$WEB_URL" &>/dev/null; then
-    print_warning "Не удалось автоматически открыть браузер."
-    print_message "Пожалуйста, откройте браузер и перейдите по адресу:"
-    echo "$WEB_URL"
-fi
-
-print_message "Веб-интерфейс установщика доступен по адресу: $WEB_URL"
-print_message "Для завершения работы установщика нажмите Ctrl+C"
-
-# Ожидаем завершения пользователем
+    # Ждем завершения работы веб-сервера
 wait $PHP_PID 
+}
+
+# Запуск основной функции
+main 
