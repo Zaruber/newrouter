@@ -25,7 +25,7 @@ VLESS Router — это проект для упрощения настройк�
 Склонируйте данный репозиторий на ваш компьютер:
 
 ```bash
-git clone https://github.com/yourusername/vless-router.git
+git clone https://github.com/Zaruber/newrouter.git
 cd vless-router
 ```
 
