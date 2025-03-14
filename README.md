@@ -34,7 +34,7 @@ opkg install wget curl xray-core luci-app-xray uhttpd uhttpd-mod-ubus openvpn-op
 
 3. Скачайте и запустите установочный скрипт:
 ```
-wget -O install.sh https://raw.githubusercontent.com/yourusername/vless-router/main/install.sh
+wget -O install.sh https://https://github.com/Zaruber/newrouter/install.sh
 chmod +x install.sh
 ./install.sh
 ```
