@@ -309,15 +309,50 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Проверка подключения к интернету на роутере
+print_message "Проверка наличия подключения к интернету на роутере..."
+INTERNET_CHECK=$(ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "ping -c 1 8.8.8.8 > /dev/null 2>&1 && echo 1 || echo 0" 2>/dev/null)
+
+if [ "$INTERNET_CHECK" -eq 1 ]; then
+    print_success "Роутер имеет подключение к интернету."
+else
+    print_warning "Роутер не имеет подключения к интернету!"
+    print_message "Для установки необходимых пакетов требуется интернет-соединение."
+    print_message "Вы можете настроить подключение к интернету через:"
+    print_tip "1. Веб-интерфейс OpenWrt (LuCI): http://$ROUTER_IP"
+    print_tip "2. Подключением WAN-порта роутера к другому источнику интернета"
+    print_tip "3. Настройкой Wi-Fi клиента для подключения к существующей сети"
+
+    # Помощь в настройке Wi-Fi клиента, если роутер не подключен к интернету
+    print_message "Хотите настроить подключение Wi-Fi клиента через этот скрипт? (y/n)"
+    read -r setup_wifi
+
+    if [ "$setup_wifi" = "y" ] || [ "$setup_wifi" = "Y" ]; then
+        setup_wifi_client
+    else
+        print_message "Пожалуйста, настройте подключение к интернету на роутере и запустите скрипт повторно."
+        print_tip "Для настройки через веб-интерфейс: откройте http://$ROUTER_IP в браузере и настройте подключение."
+        print_message "После настройки подключения запустите скрипт повторно."
+        exit 1
+    fi
+
+    # Повторная проверка подключения после настройки
+    print_message "Проверка подключения к интернету после настройки..."
+    INTERNET_CHECK=$(ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "ping -c 1 8.8.8.8 > /dev/null 2>&1 && echo 1 || echo 0" 2>/dev/null)
+
+    if [ "$INTERNET_CHECK" -eq 1 ]; then
+        print_success "Успешно! Роутер имеет подключение к интернету."
+    else
+        print_error "Не удалось настроить подключение к интернету. Пожалуйста, настройте соединение вручную и запустите скрипт повторно."
+        exit 1
+    fi
+fi
+
 # Копирование файлов проекта на роутер
 print_message "Копирование файлов VLESS Router на роутер..."
 
 # Создание директории на роутере
-if [ -n "$SSH_PASSWORD" ]; then
-    sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "mkdir -p /root/vless-router"
-else
-    ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "mkdir -p /root/vless-router"
-fi
+ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "mkdir -p /root/vless-router"
 
 if [ $? -ne 0 ]; then
     print_error "Не удалось создать директорию на роутере."
@@ -327,11 +362,7 @@ fi
 
 # Копирование файлов
 current_dir=$(dirname "$0")
-if [ -n "$SSH_PASSWORD" ]; then
-    sshpass -p "$SSH_PASSWORD" scp -P "$SSH_PORT" -r "$current_dir"/* "$ROUTER_USER@$ROUTER_IP:/root/vless-router/"
-else
-    scp -P "$SSH_PORT" -r "$current_dir"/* "$ROUTER_USER@$ROUTER_IP:/root/vless-router/"
-fi
+scp -P "$SSH_PORT" -r "$current_dir"/* "$ROUTER_USER@$ROUTER_IP:/root/vless-router/"
 
 if [ $? -ne 0 ]; then
     print_error "Не удалось скопировать файлы на роутер."
@@ -345,11 +376,7 @@ print_success "Файлы успешно скопированы на роуте�
 # Установка прав на исполнение скриптов
 print_message "Настройка прав доступа..."
 
-if [ -n "$SSH_PASSWORD" ]; then
-    sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "chmod +x /root/vless-router/scripts/*.sh && chmod +x /root/vless-router/web/*.cgi"
-else
-    ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "chmod +x /root/vless-router/scripts/*.sh && chmod +x /root/vless-router/web/*.cgi"
-fi
+ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "chmod +x /root/vless-router/scripts/*.sh && chmod +x /root/vless-router/web/*.cgi"
 
 if [ $? -ne 0 ]; then
     print_error "Не удалось установить права доступа на скрипты."
@@ -363,11 +390,7 @@ print_success "Права доступа установлены."
 print_message "Запуск скрипта установки на роутере..."
 print_message "После завершения установки веб-интерфейс будет доступен по адресу: http://$ROUTER_IP:8080"
 
-if [ -n "$SSH_PASSWORD" ]; then
-    sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "/root/vless-router/scripts/setup.sh"
-else
-    ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "/root/vless-router/scripts/setup.sh"
-fi
+ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "/root/vless-router/scripts/setup.sh"
 
 if [ $? -ne 0 ]; then
     print_error "Произошла ошибка при выполнении скрипта установки."
@@ -395,3 +418,69 @@ if command -v curl &> /dev/null; then
         print_tip "Проверьте, что веб-сервер запущен на роутере."
     fi
 fi
+
+# Функция для настройки Wi-Fi клиента
+setup_wifi_client() {
+    print_message "===== Мастер настройки Wi-Fi клиента ====="
+    print_message "Сканирование доступных Wi-Fi сетей..."
+    
+    # Сканирование и вывод списка доступных Wi-Fi сетей
+    WIFI_LIST=$(ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "iwinfo | grep ESSID | cut -d\" -f2" 2>/dev/null)
+    
+    if [ -z "$WIFI_LIST" ]; then
+        print_error "Не удалось получить список Wi-Fi сетей. Проверьте, включен ли Wi-Fi на роутере."
+        print_tip "Вы можете настроить Wi-Fi через веб-интерфейс: http://$ROUTER_IP"
+        return 1
+    fi
+    
+    # Вывод списка сетей
+    print_message "Доступные Wi-Fi сети:"
+    i=1
+    for network in $WIFI_LIST; do
+        echo "$i. $network"
+        i=$((i+1))
+    done
+    
+    # Запрос SSID и пароля
+    print_message "Введите SSID (имя) сети для подключения:"
+    read -r wifi_ssid
+    print_message "Введите пароль сети:"
+    read -r wifi_password
+    
+    print_message "Настройка Wi-Fi клиента..."
+    
+    # Конфигурация Wi-Fi клиента на роутере
+    ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "uci batch << EOF
+    set wireless.sta=wifi-iface
+    set wireless.sta.device=radio0
+    set wireless.sta.mode=sta
+    set wireless.sta.network=wwan
+    set wireless.sta.ssid='$wifi_ssid'
+    set wireless.sta.encryption=psk2
+    set wireless.sta.key='$wifi_password'
+    set network.wwan=interface
+    set network.wwan.proto=dhcp
+    commit wireless
+    commit network
+EOF
+
+# Применение настроек
+/etc/init.d/network restart
+" 2>/dev/null
+    
+    print_message "Ожидание подключения Wi-Fi (это может занять до 30 секунд)..."
+    sleep 30
+    
+    # Проверка успешного подключения
+    WIFI_STATUS=$(ssh -p "$SSH_PORT" "$ROUTER_USER@$ROUTER_IP" "iwinfo | grep -A 5 $wifi_ssid | grep -c 'Status: Connected'" 2>/dev/null)
+    
+    if [ "$WIFI_STATUS" -ge 1 ]; then
+        print_success "Wi-Fi успешно подключен к сети '$wifi_ssid'."
+        return 0
+    else
+        print_error "Не удалось подключиться к Wi-Fi сети '$wifi_ssid'."
+        print_tip "Проверьте правильность SSID и пароля."
+        print_tip "Вы можете настроить Wi-Fi через веб-интерфейс: http://$ROUTER_IP"
+        return 1
+    fi
+}
